@@ -1,250 +1,352 @@
 #include <mg.h>
 
-#define WIDTH 128 
-#define HEIGHT 64
-#define UNIT_WIDTH 5
-#define UNIT_HEIGHT 4
-#define STATUS_WIDTH 15
+Graphics gfx;
+Joystick joy;
+Button btn1;
+Shortcut shrt1;
+Cursor crs1;
+Shortcut iconSpaceInvaders;
+
+#define WIDTH 128       // ширина дисплея
+#define HEIGHT 64       // высота дисплея
+#define UNIT_WIDTH 5    // ширина юнита
+#define UNIT_HEIGHT 4   // высота юнита
+#define STATUS_WIDTH 15 // ширина колонки статуса
 #define X 0
 #define Y 1
-#define ENEMY_Y_LIMIT WIDTH-(UNIT_WIDTH+5)*ENEMIES_COLS-STATUS_WIDTH-5
 
 #define CTRL_TO 50
-#define ENEMY_TO 1000
+#define ENEMY_TO 200
 #define ROCKET_FLY_TO 50
-#define ROCKET_FIRE_TO 1000
+#define ROCKET_FIRE_TO 500
 #define PLASMA_FLY_TO 50
-#define PLASMA_FIRE_TO 1000
+#define PLASMA_FIRE_TO 500
 
-#define ENEMIES_COLS 5
-#define ENEMIES_ROWS 3
-#define ENEMIES_Q ENEMIES_COLS*ENEMIES_ROWS
+#define ENEMIES_COLS 6                       // врагов в ряду
+#define ENEMIES_ROWS 3                       // всего рядов
+#define ENEMIES_Q ENEMIES_COLS *ENEMIES_ROWS // общее количество врагов
 
-Joystick joy;
-Graphics gfx;
-Interface inf;
+#define ENEMY_Y_LIMIT WIDTH - (UNIT_WIDTH + 5) * ENEMIES_COLS - STATUS_WIDTH - 5
 
-struct unit {
-    int state = 1; 
-    int coords[2];
+byte gameState = false;
+
+static uint8_t spaceInvaders_bits[] = { //w32 h32
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xE0, 0x00, 0x00, 0x07, 0xE0, 0x00, 
+  0x00, 0x1F, 0xF8, 0x00, 0x00, 0x1C, 0x38, 0x00, 0x00, 0xFF, 0xFF, 0x00, 
+  0x00, 0xFF, 0xFF, 0x00, 0x00, 0xE3, 0xC7, 0x00, 0xC0, 0xE3, 0xC7, 0x03, 
+  0xC0, 0xE3, 0xC7, 0x03, 0xF0, 0xFF, 0xFF, 0x0F, 0xF0, 0xFF, 0xFF, 0x0F, 
+  0xF0, 0xFF, 0xFF, 0x0F, 0x70, 0xFF, 0xFF, 0x0E, 0x70, 0xFF, 0xFF, 0x0E, 
+  0x70, 0x07, 0xE0, 0x0E, 0x70, 0x7F, 0xFE, 0x0E, 0x00, 0x7C, 0x3E, 0x00, 
+  0x00, 0x7C, 0x3E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, };
+
+struct unit
+{
+    byte state = 1;
+    byte coords[2];
 };
-
-int pinLeft = A0;
-int pinRight = A1;
 
 unit player;
 unit enemies[ENEMIES_Q];
 unit rocket;
 unit plasma;
-unsigned long t, ctrl_next, enemy_next, rocket_fire_next, rocket_fly_next, 
-plasma_fire_next, plasma_fly_next;
+unsigned long t, ctrl_next, enemy_next, rocket_fire_next, rocket_fly_next, plasma_fire_next, plasma_fly_next;
 
-int enemy_drift_x = 0;
+byte enemy_drift_x = 0;
 int enemy_drift_dir = 1;
-int score = 0;
-int life = 3;
+byte score = 0;
+byte life = 3;
 
-int player_sprite[UNIT_WIDTH*UNIT_HEIGHT] = {
-    0,0,1,0,0,
-    0,1,1,1,0,
-    1,1,0,1,1,
-    1,1,0,1,1
-};
+// спрайт игрока
+//static uint8_t player_sprite[] = {0x04, 0x0E, 0x1F, 0x0A,};
+static uint8_t player_sprite2[] = {0x08, 0x08, 0x1C, 0x55, 0x7F, 0x7F, 0x2A,}; //w7 h7
+// спрайт врагов
+static uint8_t enemy_sprite[] = {0x15, 0x0E, 0x0E, 0x15,};
 
-int enemy_sprite[UNIT_WIDTH*UNIT_HEIGHT] = {
-    1,0,1,0,1,
-    0,1,1,1,0,
-    0,1,0,1,0,
-    1,0,1,0,1
-};
-
-//--------------------------------------------------------------------
-void enemyMove(){
-    if(enemy_drift_dir > 0 && enemy_drift_x < ENEMY_Y_LIMIT){
-        enemy_drift_x ++;
-    } 
-    else if(enemy_drift_dir < 0 && enemy_drift_x > 5){
-        enemy_drift_x --;
+void enemyMove()
+{
+    if (enemy_drift_dir > 0 && enemy_drift_x < ENEMY_Y_LIMIT)
+    {
+        enemy_drift_x += 1;
     }
-    else{
-        enemy_drift_dir = -1*enemy_drift_dir;
-    }
-    for(int e = 0; e < ENEMIES_Q; e++){
+    else if (enemy_drift_dir < 0 && enemy_drift_x > 5)
+        enemy_drift_x -= 1;
+    else
+        enemy_drift_dir = -1 * enemy_drift_dir;
+
+    for (byte e = 0; e < ENEMIES_Q; e++)
         enemies[e].coords[X] += enemy_drift_dir;
-    }
 }
 
-void drawEnemyPlasma(){
-    if (!plasma.state){
+void resetGame()
+{
+        gameState = false;
+
+        for(byte e = 0; e < ENEMIES_Q; e++)
+        {
+            enemies[e].state = 1;
+            enemies[e].coords[X] = 0;
+            enemies[e].coords[Y] = 1;
+            enemy_drift_x = 0;
+            enemy_drift_dir = 1;
+        }
+
+        score = 0; life = 3;
+}
+
+void drawEnemyPlasma()
+{
+    // если статус плазмы - ложь, не отрисовываем её
+    if (!plasma.state)
         return;
-    }
-    u8g2.drawBox(plasma.coords[X], plasma.coords[Y], 1, 3);
+    u8g2.drawVLine(plasma.coords[X], plasma.coords[Y], 3);
 }
 
-void fireEnemyPlasma(int idx){
+void fireEnemyPlasma(byte idx)
+{
     plasma.state = 1;
-    plasma.coords[X] = enemies[idx].coords[X] + UNIT_WIDTH/2;
+    plasma.coords[X] = enemies[idx].coords[X] + UNIT_WIDTH / 2;
     plasma.coords[Y] = enemies[idx].coords[Y] + UNIT_WIDTH;
 }
 
-void PlasmaMove(){
-    if(!plasma.state){
+void plasmaMove()
+{
+    // если статус плазмы - ложь, не обрабатываем её полёт
+    if (!plasma.state)
         return;
-    }
-    if(plasma.coords[X] > player.coords[X] && plasma.coords[X] < player.coords[X] + UNIT_WIDTH && plasma.coords[Y] > player.coords[Y]){
+    // проверяем, пересекает ли плазма контур игрока
+    if (plasma.coords[X] > player.coords[X] &&
+        plasma.coords[X] < player.coords[X] + UNIT_WIDTH &&
+        plasma.coords[Y] > player.coords[Y])
+    {
+        // если пересекает, выключаем плазму и запускаем процедуру смерти игрока
         playerKill();
         return;
     }
-    if(plasma.coords[Y] == HEIGHT){
+
+    if (plasma.coords[Y] == HEIGHT)
+    {
         plasma.state = 0;
     }
-    plasma.coords[Y]++;
+    plasma.coords[Y] += 1;
 }
 
-void enemyKill(int idx){
+void enemyKill(byte idx)
+{
     rocket.state = 0;
     enemies[idx].state = 0;
     score++;
-}
-//-----
 
-void handleControls(){
-    if (player.coords[X] > 0 && player.coords[X] < WIDTH-1){
-        player.coords[X] += joy.calculateIndexX0();
+    if (score == 18)
+    {
+        resetGame();
     }
 }
 
-void drawInterface(){
-    gfx.print((String)score, WIDTH - STATUS_WIDTH, 1, 6, 4);
-    gfx.print((String)life, WIDTH - STATUS_WIDTH, 20, 6, 4);
+void drawInterface()
+{
+    //выводим счет и кол-во жизней
+    if (score < 10)
+    {
+        gfx.print((String)score, 122, 8);
+    }
+    else gfx.print((String)score, 116, 8);
+
+    gfx.print((String)life, 122, 20);
 }
 
-void drawPlayer(){
-    for(int px = 0; px < UNIT_WIDTH; px++){
-        for(int py = 0; py < UNIT_HEIGHT; py++){
-            u8g2.drawXBMP(player.coords[X] + px, player.coords[Y] + py, player_sprite[px + py*UNIT_WIDTH]);
+void drawPlayer()
+{
+    u8g2.drawXBMP(player.coords[X], player.coords[Y], 7, 7, player_sprite2); //5 4
+}
+
+void drawEnemies()
+{
+    for (byte e = 0; e < ENEMIES_Q; e++)
+    {
+        if (enemies[e].state)
+        {
+            u8g2.drawXBMP(enemies[e].coords[X], enemies[e].coords[Y], 5, 4, enemy_sprite);
         }
     }
 }
 
-void drawEnemies(){
-    for(int e = 0; e < ENEMIES_Q; e++){
-        if(enemies[e].state){
-            for(int px = 0; px < UNIT_WIDTH; px++){
-                for(int py = 0; py < UNIT_HEIGHT; py++){
-                    u8g2.drawXBMP(enemies[e].coords[X] + px, enemies[e].coords[Y] + py, enemy_sprite[px + py*UNIT_WIDTH]);
-                }
-            }
-        }
-    }
-}
-
-void drawPlayerRocket(){
-    if(!rocket.state){
+void drawPlayerRocket()
+{
+    // если статус ракет - ложь, не отрисовываем её
+    if ((!rocket.state) || (!joy.pressKeyB()))
+    {
+        rocket.coords[X] = player.coords[X] + 3;
+        rocket.coords[Y] = player.coords[Y];
         return;
     }
-    u8g2.drawBox(rocket.coords[X], rocket.coords[Y], 1, 1);
+    else u8g2.drawVLine(rocket.coords[X], rocket.coords[Y], 3);
 }
-//-----
-void firePlayerRocket(){
+
+void firePlayerRocket()
+{
     rocket.state = 1;
-    rocket.coords[X] = player.coords[X] + UNIT_WIDTH/2;
+    rocket.coords[X] = player.coords[X] + 3;
     rocket.coords[Y] = player.coords[Y] - 1;
 }
 
-void rocketMove(){
-    if(!rocket.state){
-        return;
-    }
-    for(int e = 0; e < ENEMIES_Q; e++){
-        if(enemies[e].state && rocket.coords[X] > enemies[e].coords[X] && rocket.coords[X] < enemies[e].coords[X] + UNIT_WIDTH && rocket.coords[Y] > enemies[e].coords[Y] + UNIT_HEIGHT){
-            enemyKill(e);
+void rocketMove()
+{
+    if (joy.pressKeyB())
+    {
+        // если статус ракет - ложь, не обрабатываем её полёт
+        if (!rocket.state)
             return;
+        // перебираем всех врагов
+        for (byte e = 0; e < ENEMIES_Q; e++)
+        {
+            // проверяем, пересекает ли ракета в контур пришельца
+            if (enemies[e].state &&
+                rocket.coords[X] > enemies[e].coords[X] &&
+                rocket.coords[X] < enemies[e].coords[X] + UNIT_WIDTH &&
+                rocket.coords[Y] < enemies[e].coords[Y] + UNIT_HEIGHT)
+            {
+                // если попадает, выключаем ракету и пришельца из игры
+                enemyKill(e);
+                return;
+            }
         }
+
+        if (rocket.coords[Y] == 0)
+        {
+            rocket.state = 0;
+        }
+        rocket.coords[Y] -= 1;
     }
-    if(rocket.coords[Y] == 0){
-        rocket.state = 0;
-    }
-    rocket.coords[Y]--;
 }
 
-void playerKill(){
+void playerKill()
+{
     plasma.state = 0;
-    if(life>0){
-        life--;
+    if (life > 0)
+    {
+        life--; // убавляем количество жизней
+    }
+    else if (life == 0)
+    {
+        resetGame();
     }
 }
-//--------------------------------------------------------------------
 
-void setup(){
-    gfx.initializationSystem(); 
-    player.coords[X] = WIDTH/2 - UNIT_WIDTH/2;
-    player.coords[Y] = HEIGHT - UNIT_HEIGHT - 1;
+void beginGame()
+{
+    if (gameState == false)
+    {
+        player.coords[X] = 128 / 2;
+        player.coords[Y] = 52;
 
-    for(int x = 0; x < ENEMIES_COLS; x++){
-        for(int y = 0; y < ENEMIES_ROWS; y++){
-            int e = x + y*ENEMIES_COLS;
-            enemies[e].coords[X] = 5 + x*(5+UNIT_WIDTH);
-            enemies[e].coords[Y] = 5 + x*(3+UNIT_WIDTH);
+        // начальные координаты врагов
+        for (byte x = 0; x < ENEMIES_COLS; x++)
+        { // в ряду 8 врагов
+            for (byte y = 0; y < ENEMIES_ROWS; y++)
+            { // всего 3 ряда врагов
+                byte e = x + y * ENEMIES_COLS;
+                enemies[e].coords[X] = 5 + x * (5 + UNIT_WIDTH); // 5
+                enemies[e].coords[Y] = 5 + y * (3 + UNIT_WIDTH); // 3
+            }
         }
+        ctrl_next = millis() + CTRL_TO;
     }
-
-    ctrl_next = millis() + CTRL_TO;
 }
 
-void game(){
+void gameSpaceInvaders()
+{
+    beginGame();
     
-}
-
-void loop(){
+    gameState = true;
+    
     unsigned long t = millis();
-    if(t > ctrl_next){
+    if (t > ctrl_next)
+    {
         ctrl_next = t + CTRL_TO;
-        
-        handleControls();
 
-        u8g2.clearDisplay();
-        drawInterface();
-        drawPlayer();
-        drawEnemies();
-        drawEnemyPlasma();
-        drawPlayerRocket();
-        u8g2.display();
+        joy.updatePositionXY();
+        player.coords[X] = joy.posX0;
+        player.coords[Y] = 52;
+
+        u8g2.clearBuffer();     // очистка фрейма
+        drawInterface();        // отрисовка очков и жизней
+        drawPlayer();           // отрисовка игрока на фрейме
+        drawEnemies();          // отрисовка врагов на фрейме
+        drawEnemyPlasma();      // отрисовка плазмы врага
+        drawPlayerRocket();     // отрисовка ракеты игрока
+        u8g2.sendBuffer();      // вывод фрейма на дисплей
     }
-    if(t > enemy_next){
+    if (t > enemy_next)
+    {
         enemy_next = t + ENEMY_TO;
         enemyMove();
     }
-    if(t > plasma_fire_next && !plasma.state){
+    if (t > plasma_fire_next && !plasma.state)
+    {
         plasma_fire_next = t + PLASMA_FIRE_TO;
-        int e;
-        int idx = 255;
-        for(int y=0; y<ENEMIES_ROWS; y++){
-            for(int x=0; y<ENEMIES_COLS; x++){
-                e = x+(2-y)*ENEMIES_COLS;
-                if(enemies[e].state){
+        byte e;
+        byte idx = 255;
+        for (byte y = 0; y < ENEMIES_ROWS; y++)
+        {
+            for (byte x = 0; x < ENEMIES_COLS; x++)
+            {
+                e = x + (2 - y) * ENEMIES_COLS;
+                // выбираем первого попавшегося живого врага в ближнем к игроку ряду
+                if (enemies[e].state)
+                {
                     idx = e;
                     break;
                 }
             }
-            if(idx < 255){
+            if (idx < 255)
                 break;
-            }
         }
-        if(idx < 255){
+        if (idx < 255)
             fireEnemyPlasma(idx);
-        }
     }
-    if(t > plasma_fire_next){
+    if (t > plasma_fly_next)
+    {
         plasma_fly_next = t + PLASMA_FLY_TO;
-        PlasmaMove();
+        plasmaMove();
     }
-    if(t > rocket_fire_next && !rocket.state){
+    if (t > rocket_fire_next && !rocket.state)
+    {
         rocket_fire_next = t + ROCKET_FIRE_TO;
         firePlayerRocket();
     }
-    if(t > rocket_fly_next){
+    if (t > rocket_fly_next)
+    {
         rocket_fly_next = t + ROCKET_FLY_TO;
         rocketMove();
     }
+}
+
+void interfaceBoard()
+{
+    if (gameState == false) gfx.render(desctop);
+    if (gameState == true) gameSpaceInvaders();
+}
+
+void desctop()
+{
+    joy.updatePositionXY();
+
+    gfx.print("Move the cursor\nto the Space Invaders\ngame shortcut", 5, 10, 8, 5);
+    iconSpaceInvaders.shortcut(spaceInvaders_bits, 5, 30, gameSpaceInvaders, joy.posX0, joy.posY0);
+    crs1.cursor(true, joy.posX0, joy.posY0);
+}
+
+
+void setup()
+{
+    gfx.initializationSystem();
+}
+
+void loop()
+{
+    interfaceBoard();
 }
