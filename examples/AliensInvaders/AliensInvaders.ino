@@ -16,15 +16,15 @@ Shortcut iconSpaceInvaders;
 #define Y 1
 
 #define CTRL_TO 50
-#define ENEMY_TO 200
+int ENEMY_TO = 200;
 #define ROCKET_FLY_TO 50
 #define ROCKET_FIRE_TO 500
-#define PLASMA_FLY_TO 50
+int PLASMA_FLY_TO = 50;
 #define PLASMA_FIRE_TO 500
 
-#define ENEMIES_COLS 6                       // врагов в ряду
-#define ENEMIES_ROWS 3                       // всего рядов
-#define ENEMIES_Q ENEMIES_COLS *ENEMIES_ROWS // общее количество врагов
+#define ENEMIES_COLS 8                        // врагов в ряду
+#define ENEMIES_ROWS 3                        // всего рядов
+#define ENEMIES_Q (ENEMIES_COLS*ENEMIES_ROWS) // общее количество врагов
 
 #define ENEMY_Y_LIMIT WIDTH - (UNIT_WIDTH + 5) * ENEMIES_COLS - STATUS_WIDTH - 5
 
@@ -52,7 +52,8 @@ struct unit
 unit player;
 unit enemies[ENEMIES_Q];
 unit rocket;
-unit plasma;
+unit plasma; //поставить статус на ноль
+//курсор не пропадает а уходит за экран
 unsigned long t, ctrl_next, enemy_next, rocket_fire_next, rocket_fly_next, plasma_fire_next, plasma_fly_next;
 
 byte enemy_drift_x = 0;
@@ -83,18 +84,21 @@ void enemyMove()
 
 void resetGame()
 {
-        gameState = false;
+    gameState = false;
 
-        for(byte e = 0; e < ENEMIES_Q; e++)
-        {
-            enemies[e].state = 1;
-            enemies[e].coords[X] = 0;
-            enemies[e].coords[Y] = 1;
-            enemy_drift_x = 0;
-            enemy_drift_dir = 1;
-        }
+    for(byte e = 0; e < ENEMIES_Q; e++)
+    {
+        enemies[e].state = 1;
+        enemies[e].coords[X] = 0;
+        enemies[e].coords[Y] = 1;
+        enemy_drift_x = 0;
+        enemy_drift_dir = 1;
+    }
 
-        score = 0; life = 3;
+    score = 0; life = 3;
+
+    //joy.posX0 = 64;
+    //joy.posY0 = 32;
 }
 
 void drawEnemyPlasma()
@@ -139,10 +143,11 @@ void enemyKill(byte idx)
     rocket.state = 0;
     enemies[idx].state = 0;
     score++;
-
-    if (score == 18)
+    ENEMY_TO -= 11-ENEMIES_COLS;
+    PLASMA_FLY_TO -= 1;
+    if (score == ENEMIES_Q)
     {
-        resetGame();
+        resetGame(); gameState = false;
     }
 }
 
@@ -177,7 +182,7 @@ void drawEnemies()
 void drawPlayerRocket()
 {
     // если статус ракет - ложь, не отрисовываем её
-    if ((!rocket.state) || (!joy.pressKeyB()))
+    if ((!rocket.state))
     {
         rocket.coords[X] = player.coords[X] + 3;
         rocket.coords[Y] = player.coords[Y];
@@ -195,8 +200,8 @@ void firePlayerRocket()
 
 void rocketMove()
 {
-    if (joy.pressKeyB())
-    {
+    //if (joy.pressKeyB())
+    //{
         // если статус ракет - ложь, не обрабатываем её полёт
         if (!rocket.state)
             return;
@@ -220,7 +225,7 @@ void rocketMove()
             rocket.state = 0;
         }
         rocket.coords[Y] -= 1;
-    }
+    //}
 }
 
 void playerKill()
@@ -288,9 +293,16 @@ void gameSpaceInvaders()
     if (t > plasma_fire_next && !plasma.state)
     {
         plasma_fire_next = t + PLASMA_FIRE_TO;
-        byte e;
-        byte idx = 255;
-        for (byte y = 0; y < ENEMIES_ROWS; y++)
+        byte e = random(0, ENEMIES_Q);
+        if (!enemies[e].state)
+        {
+            while (!enemies[e].state)
+            {
+                e = random(0, ENEMIES_Q);
+            }
+        }
+        byte idx = e;
+        /*for (byte y = 0; y < ENEMIES_ROWS; y++)
         {
             for (byte x = 0; x < ENEMIES_COLS; x++)
             {
@@ -304,7 +316,7 @@ void gameSpaceInvaders()
             }
             if (idx < 255)
                 break;
-        }
+        }*/
         if (idx < 255)
             fireEnemyPlasma(idx);
     }
